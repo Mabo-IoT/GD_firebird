@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 import time
-import firebirdsql
 from logging import getLogger
 
 from Doctopus.Doctopus_main import Check, Handler
@@ -13,68 +12,62 @@ class MyCheck(Check):
         super(MyCheck, self).__init__(configuration=configuration)
         self.conf = configuration['user_conf']['check']
         self.alarm_names = set()
-        self.cursor =  self.connect(path=self.conf['path'], host=self.conf['host'], port=self.conf['port'], 
-                        username=self.conf['username'], passwd=self.conf['passwd'], )
+        self.cursor =  self.connect(self.conf['host'], self.conf['port'], self.conf['username'], self.conf['passwd'])
 
-    def connect(self, path='../EKP.FDB', host='localhost', port=3050, username='sysdba', passwd='masterkey',):
+    def connect(self, host='localhost', port=3050, username='sysdba', passwd='masterkey'):
+        pass
+
+    def select_alarm_row(self):
         """
-        connect to firebird and create a cursor
+        select alarm data
         """
-        try:
-            conn = firebirdsql.connect(
-                host=host,
-                database=path,
-                port=305,
-                user='sysdba',
-                password='masterkey',
-                charset='gbk',
-            )
-
-            cur = conn.cursor()
-
-        except Exception as e:
-            log.error(e)
-
-        return cur
-
-    def select_tank_row(self, table_name="TANK4"):
-        """
-        select tank data
-        """
-        sql = 'select * from {} order by DT desc'
-        sql = sql.format(table_name)
+        sql = 'select * from HISTALARM order by DT desc'
         self.cursor.execute(sql)
         row = self.cursor.fetchone()
         # print(row)
         return row
 
-    def process_tank_data(self, tank_data):
+    def handle_warning_state(self, alarm_name, state):
         """
-        parse tank data to right format which influxdb fields need
+        maintain alarm_names and warning state and warning string
         """
-        # unpack tank_data
-        datetime, M, T, H, P, U1, I1, P1, L1, U2, I2, P2, L2, U3, I3, P3, L3 = tank_data
+        # maintain alarm_name list
+        if state == '报警发生':
+            self.alarm_names.add(alarm_name)
+        else:
+            # maybe self.alarm_names is empty
+            if alarm_name in self.alarm_names:
+                self.alarm_names.remove(alarm_name)
+            else:
+                pass
+        # change warning state
+        if self.alarm_names:
+            warning = 1
+        else:
+            warning = 0
+
+        warning_string = ';'.join(self.alarm_names)
+
+        return warning, warning_string
+
+    def process_alarm_data(self, alarm_data):
+        """
+        parse alarm data to right format which influxdb fields need
+        """
+        alarm_id, alarm_name, datetime, state, remark = alarm_data
         # datetime to timestamp
         date_timestamp = time.mktime(datetime.timetuple())
 
+        warning, warning_string = self.handle_warning_state(alarm_name, state)
+
         data = {
+                "warning": warning,
+                "warning_string": warning_string, 
+                "alarm_id": alarm_id,
+                "alarm_name": alarm_name,
                 "date_timestamp": date_timestamp,
-                "M": M,
-                "T": T, 
-                "H": H,
-                "P": P,
-                "U1": U1,
-                "I1": I1,
-                "P1": P1,
-                "L1": L1,
-                "U2": U2,
-                "I2": I2,
-                "P2": P2,
-                "L2": L2,
-                "U3": U3,
-                "I3": I3,
-                "P3": P3,
-                "L3": L3,
+                "state": state,
+                "remark": remark,
                 }
         return data
 
@@ -84,16 +77,15 @@ class MyCheck(Check):
         :param command: user defined parameter.
         :return: the data you requested.
         """
-        try:
-            # select data from firebire database
-            tank_data = self.select_tank_row()
-            # process select data to right fields which influxdb need
-            tank_data_handle = self.process_tank_data(tank_data)
+        # select data from firebire database
+        alarm_data = self.select_alarm_row()
+        # process select data to right fields which influxdb need
+        alarm_data_handle = self.process_alarm_data(alarm_data)
         
-        except Exception as e:
-            log.error(e)
-
-        yield tank_data_handle
+        data = 'check的data'
+        log.debug('%s', data)
+        time.sleep(2)
+        yield data
 
 
 class MyHandler(Handler):
@@ -128,13 +120,12 @@ class MyHandler(Handler):
         """
         # exmple.
         # 数据经过处理之后生成 value_list
-        #log.debug('%s', raw_data)
-        timestamp = raw_data['date_timestamp']
-        raw_data.pop('date_timestamp')
-        data_value_list = raw_data
+        log.debug('%s', raw_data)
+        data_value_list = [raw_data]
+
+        tags = {'user_defined_tag': 'data_ralated_tag'}
 
         # user 可以在handle里自己按数据格式制定tags
         user_postprocessed = {'data_value': data_value_list,
-                              'timestamp': timestamp,
-                                }
+                              'tags': tags, }
         yield user_postprocessed

@@ -1,4 +1,4 @@
-node = 'test'
+node = 'fireb'
 local_ip = "10.0.0.1"
 application = "ziyan"
 paths = ['./conf/conf.toml', './lua/enque_script.lua', './plugins/your_plugin.py']
@@ -6,13 +6,18 @@ paths = ['./conf/conf.toml', './lua/enque_script.lua', './plugins/your_plugin.py
 [user_conf]
     [user_conf.check]
     # check config
+    host = 'localhost'
+    port = 3050
+    path = 'D:\Work\Projects\GD_firebird\EKP.FDB'
+    username = 'sysdba'
+    passwd = 'masterkey'
 
     [user_conf.handler]
     # handler config
-    table_name = 'test_table'
-    field_name_list = ['Msg']
+    table_name = 'GD_firebird_tank'
+    # field_name_list = ['Msg']
     # 's' or 'u'
-    unit = 's'
+    unit = 'u'
 
 
 [sender]
