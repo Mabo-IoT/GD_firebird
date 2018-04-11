@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 import time
+import firebirdsql
 from logging import getLogger
 
 from Doctopus.Doctopus_main import Check, Handler
+
 
 log = getLogger('Doctopus.plugins')
 
@@ -12,10 +14,46 @@ class MyCheck(Check):
         super(MyCheck, self).__init__(configuration=configuration)
         self.conf = configuration['user_conf']['check']
         self.alarm_names = set()
-        self.cursor =  self.connect(self.conf['host'], self.conf['port'], self.conf['username'], self.conf['passwd'])
+        self.conn =  self.connect(path=self.conf['path'], host=self.conf['host'], port=self.conf['port'], 
+                        username=self.conf['username'], passwd=self.conf['passwd'], )
+        self.cursor = self.conn.cursor()
 
-    def connect(self, host='localhost', port=3050, username='sysdba', passwd='masterkey'):
-        pass
+    def connect(self, path='../EKP.FDB', host='localhost', port=3050, username='sysdba', passwd='masterkey',):
+        """
+        connect to firebird and create a cursor
+        """
+        log.debug(path)
+        while True:
+            try:
+                conn = firebirdsql.connect(
+                    host=host,
+                    database=path,
+                    port=3050,
+                    user='sysdba',
+                    password='masterkey',
+                    charset='gbk',
+                )
+
+                if conn:
+                    break
+
+            except Exception as e:
+                log.error(e)
+                log.info("please check if database and trying to connect again!")
+
+        return conn
+
+    def re_connect(self):
+        """
+        reconnect to database
+        """
+        self.cursor.close()
+        self.conn.close()
+
+        self.conn =  self.connect(path=self.conf['path'], host=self.conf['host'], port=self.conf['port'], 
+                        username=self.conf['username'], passwd=self.conf['passwd'], )
+
+        self.cursor = self.conn.cursor()
 
     def select_alarm_row(self):
         """
@@ -77,15 +115,20 @@ class MyCheck(Check):
         :param command: user defined parameter.
         :return: the data you requested.
         """
-        # select data from firebire database
-        alarm_data = self.select_alarm_row()
-        # process select data to right fields which influxdb need
-        alarm_data_handle = self.process_alarm_data(alarm_data)
+        tank_data_handle = None
+
+        try:
+            # select data from firebire database
+            alarm_data = self.select_alarm_row()
+            # process select data to right fields which influxdb need
+            alarm_data_handle = self.process_alarm_data(alarm_data)
         
-        data = 'check的data'
-        log.debug('%s', data)
-        time.sleep(2)
-        yield data
+        except Exception as e:
+            log.error(e)
+            self.re_connect()
+
+        if alarm_data_handle:
+            yield alarm_data_handle
 
 
 class MyHandler(Handler):
@@ -120,12 +163,13 @@ class MyHandler(Handler):
         """
         # exmple.
         # 数据经过处理之后生成 value_list
-        log.debug('%s', raw_data)
-        data_value_list = [raw_data]
-
-        tags = {'user_defined_tag': 'data_ralated_tag'}
+        #log.debug('%s', raw_data)
+        timestamp = raw_data['date_timestamp']
+        raw_data.pop('date_timestamp')
+        data_value_list = raw_data
 
         # user 可以在handle里自己按数据格式制定tags
         user_postprocessed = {'data_value': data_value_list,
-                              'tags': tags, }
+                              'timestamp': timestamp,
+                                }
         yield user_postprocessed

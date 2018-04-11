@@ -15,6 +15,7 @@ paths = ['./conf/conf.toml', './lua/enque_script.lua', './plugins/your_plugin.py
     [user_conf.handler]
     # handler config
     table_name = 'GD_firebird_tank'
+    # table_name = 'GD_firebird_alarm'
     # field_name_list = ['Msg']
     # 's' or 'u'
     unit = 'u'
