@@ -56,7 +56,7 @@ class MyCheck(Check):
         """
         alarm_id, alarm_name, datetime, state, remark = alarm_data
         # datetime to timestamp
-        date_timestamp = time.mktime(datetime.timetuple())
+        date_timestamp = int(time.mktime(datetime.timetuple())) * 1000000 # to fit infuxldb timestamp 'us'
 
         warning, warning_string = self.handle_warning_state(alarm_name, state)
 

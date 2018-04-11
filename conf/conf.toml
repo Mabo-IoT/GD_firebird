@@ -18,6 +18,8 @@ paths = ['./conf/conf.toml', './lua/enque_script.lua', './plugins/your_plugin.py
     # field_name_list = ['Msg']
     # 's' or 'u'
     unit = 'u'
+        [user_conf.handler.tags]
+        eqpt_no = 'PEC0-1900'
 
 
 [sender]

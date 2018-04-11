@@ -5,6 +5,7 @@ from logging import getLogger
 
 from Doctopus.Doctopus_main import Check, Handler
 
+
 log = getLogger('Doctopus.plugins')
 
 
@@ -13,29 +14,46 @@ class MyCheck(Check):
         super(MyCheck, self).__init__(configuration=configuration)
         self.conf = configuration['user_conf']['check']
         self.alarm_names = set()
-        self.cursor =  self.connect(path=self.conf['path'], host=self.conf['host'], port=self.conf['port'], 
+        self.conn =  self.connect(path=self.conf['path'], host=self.conf['host'], port=self.conf['port'], 
                         username=self.conf['username'], passwd=self.conf['passwd'], )
+        self.cursor = self.conn.cursor()
 
     def connect(self, path='../EKP.FDB', host='localhost', port=3050, username='sysdba', passwd='masterkey',):
         """
         connect to firebird and create a cursor
         """
-        try:
-            conn = firebirdsql.connect(
-                host=host,
-                database=path,
-                port=305,
-                user='sysdba',
-                password='masterkey',
-                charset='gbk',
-            )
+        log.debug(path)
+        while True:
+            try:
+                conn = firebirdsql.connect(
+                    host=host,
+                    database=path,
+                    port=3050,
+                    user='sysdba',
+                    password='masterkey',
+                    charset='gbk',
+                )
 
-            cur = conn.cursor()
+                if conn:
+                    break
 
-        except Exception as e:
-            log.error(e)
+            except Exception as e:
+                log.error(e)
+                log.info("please check if database and trying to connect again!")
 
-        return cur
+        return conn
+
+    def re_connect(self):
+        """
+        reconnect to database
+        """
+        self.cursor.close()
+        self.conn.close()
+
+        self.conn =  self.connect(path=self.conf['path'], host=self.conf['host'], port=self.conf['port'], 
+                        username=self.conf['username'], passwd=self.conf['passwd'], )
+
+        self.cursor = self.conn.cursor()
 
     def select_tank_row(self, table_name="TANK4"):
         """
@@ -55,7 +73,7 @@ class MyCheck(Check):
         # unpack tank_data
         datetime, M, T, H, P, U1, I1, P1, L1, U2, I2, P2, L2, U3, I3, P3, L3 = tank_data
         # datetime to timestamp
-        date_timestamp = time.mktime(datetime.timetuple())
+        date_timestamp = int(time.mktime(datetime.timetuple()) * 1000000) # to fit infuxldb timestamp 'us'
 
         data = {
                 "date_timestamp": date_timestamp,
@@ -84,6 +102,8 @@ class MyCheck(Check):
         :param command: user defined parameter.
         :return: the data you requested.
         """
+        tank_data_handle = None
+
         try:
             # select data from firebire database
             tank_data = self.select_tank_row()
@@ -92,8 +112,10 @@ class MyCheck(Check):
         
         except Exception as e:
             log.error(e)
+            self.re_connect()
 
-        yield tank_data_handle
+        if tank_data_handle:
+            yield tank_data_handle
 
 
 class MyHandler(Handler):
