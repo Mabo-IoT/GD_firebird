@@ -20,11 +20,6 @@ local fields = ARGV[1]
 local timestamp = ARGV[2]
 
 -- FUNCTION PART----------------------------------------------------------------------
-local function set_threshold(threshold_name, timestamp)
-    redis.call('HSET', threshold_name, 'fields', fields)
-    redis.call('HSET', threshold_name, 'timestamp', timestamp)
-end
-
 local function threshold(fields, timestamp, time_range)
     --    parameters:
     --      fields      table influx json fields.
@@ -33,28 +28,26 @@ local function threshold(fields, timestamp, time_range)
     --    f_flag get True when fields is diffrent with old fields.
     --    t_flag get True when time is longer than threshold time range.
 
-    local eqpt_no = cmsgpack.unpack(fields)['tags']['eqpt_no']
-    local threshold_name = string.format("threshold_%s_%s", eqpt_no, cmsgpack.unpack(table_name)) 
-    local old_fields = redis.call("HGET", threshold_name , "fields")
-    local old_timestamp = redis.call("HGET", threshold_name, "timestamp")
+    local old_fields = redis.call("HGET", "threshold", "fields")
+    local old_timestamp = redis.call("HGET", "threshold", "timestamp")
 
     if old_fields == false or old_timestamp == false then
-        set_threshold(threshold_name, timestamp)
+        redis.call('HSET', 'threshold', 'fields', fields)
+        redis.call('HSET', 'threshold', 'timestamp', timestamp)
         return true, true
     end
 
     local f_flag = false
     local t_flag = false
-    -- fields changed then set fields
     if fields ~= old_fields then
         f_flag = true
-        set_threshold(threshold_name, timestamp)
+        redis.call("HSET", 'threshold', "fields", fields)
+        redis.call("HSET", 'threshold', "timestamp", timestamp)
     end
-    -- time bigger than last time set fields
-
     if tonumber(timestamp) - tonumber(old_timestamp) > time_range then
         t_flag = true
-        set_threshold(threshold_name, timestamp)
+        redis.call("HSET", 'threshold', "fields", fields)
+        redis.call("HSET", 'threshold', "timestamp", timestamp)
     end
     return f_flag, t_flag
 end
@@ -77,7 +70,6 @@ if redis.call("llen", "data_queue") > 2 * 24 * 60 * 60 / 5 then
     redis.call("lpop", "data_queue")
 end
 
---set threshold according to time_range, fields['eqpt_no'], table_name
 f_flag, t_flag = threshold(fields, cmsgpack.unpack(timestamp), time_range)
 
 

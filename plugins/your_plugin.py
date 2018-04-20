@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import time
 import firebirdsql
+import traceback
 from logging import getLogger
 
 from Doctopus.Doctopus_main import Check, Handler
@@ -13,6 +14,7 @@ class MyCheck(Check):
     def __init__(self, configuration):
         super(MyCheck, self).__init__(configuration=configuration)
         self.conf = configuration['user_conf']['check']
+        self.table_names = self.conf['table_names']
         self.alarm_names = set()
         self.conn =  self.connect(path=self.conf['path'], host=self.conf['host'], port=self.conf['port'], 
                         username=self.conf['username'], passwd=self.conf['passwd'], )
@@ -55,7 +57,7 @@ class MyCheck(Check):
 
         self.cursor = self.conn.cursor()
 
-    def select_tank_row(self, table_name="TANK4"):
+    def select_tank_row(self, table_name):
         """
         select tank data
         """
@@ -96,6 +98,17 @@ class MyCheck(Check):
                 }
         return data
 
+    def add_table_name(self, tank_data, table_name):
+        """
+        add table_name in fields
+        """
+        table_dict = {
+            "table_name": table_name,
+        }
+        tank_data.update(table_dict)
+
+        return tank_data
+
     def user_check(self):
         """
 
@@ -104,18 +117,26 @@ class MyCheck(Check):
         """
         tank_data_handle = None
 
-        try:
-            # select data from firebire database
-            tank_data = self.select_tank_row()
-            # process select data to right fields which influxdb need
-            tank_data_handle = self.process_tank_data(tank_data)
-        
-        except Exception as e:
-            log.error(e)
-            self.re_connect()
+        for table_name in self.table_names:
+            try:
+                # select data from firebire database
+                tank_data = self.select_tank_row(table_name)
+                # when table have data
+                if tank_data:
+                # process select data to right fields which influxdb need
+                    tank_data_handle = self.process_tank_data(tank_data)
+                    tank_data_handle = self.add_table_name(tank_data_handle, table_name)
+                else:
+                    log.info("{} have no data".format(table_name))
+                    tank_data_handle = None
+            
+            except Exception as e:
+                traceback.print_exc()
+                log.error(e)
+                self.re_connect()
 
-        if tank_data_handle:
-            yield tank_data_handle
+            if tank_data_handle:
+                yield tank_data_handle
 
 
 class MyHandler(Handler):
@@ -151,12 +172,20 @@ class MyHandler(Handler):
         # exmple.
         # 数据经过处理之后生成 value_list
         #log.debug('%s', raw_data)
+        
+        # extract date_timestamp
         timestamp = raw_data['date_timestamp']
         raw_data.pop('date_timestamp')
+        # extract table_name
+        table_name = '{0}_{1}'.format(self.table_name, raw_data['table_name'])
+        log.debug(table_name)
+        raw_data.pop('table_name')
+
         data_value_list = raw_data
 
         # user 可以在handle里自己按数据格式制定tags
         user_postprocessed = {'data_value': data_value_list,
                               'timestamp': timestamp,
+                              'table_name': table_name,
                                 }
         yield user_postprocessed

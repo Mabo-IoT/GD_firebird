@@ -8,13 +8,14 @@ paths = ['./conf/conf.toml', './lua/enque_script.lua', './plugins/your_plugin.py
     # check config
     host = 'localhost'
     port = 3050
-    path = 'D:\Work\Projects\GD_firebird\EKP.FDB'
+    path = 'D:\Work\Projects\GD_firebird_project\EKP.FDB'
     username = 'sysdba'
     passwd = 'masterkey'
+    table_names= ['TANK1', 'TANK2', 'TANK3', 'TANK4']
 
     [user_conf.handler]
     # handler config
-    table_name = 'GD_firebird_tank'
+    table_name = 'GD_firebird'
     # table_name = 'GD_firebird_alarm'
     # field_name_list = ['Msg']
     # 's' or 'u'
