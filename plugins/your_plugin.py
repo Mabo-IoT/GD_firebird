@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 import time
-import firebirdsql
 import traceback
+
+import pendulum
+import firebirdsql
 from logging import getLogger
 
 from Doctopus.Doctopus_main import Check, Handler
@@ -57,17 +59,6 @@ class MyCheck(Check):
 
         self.cursor = self.conn.cursor()
 
-    def select_tank_row(self, table_name):
-        """
-        select tank data
-        """
-        sql = 'select * from {} order by DT desc'
-        sql = sql.format(table_name)
-        self.cursor.execute(sql)
-        row = self.cursor.fetchone()
-        # print(row)
-        return row
-
     def process_tank_data(self, tank_data):
         """
         parse tank data to right format which influxdb fields need
@@ -97,17 +88,105 @@ class MyCheck(Check):
                 "L3": L3,
                 }
         return data
+    
+    def handle_warning_state(self, alarm_name, state):
+        """
+        maintain alarm_names and warning state and warning string
+        """
+        # maintain alarm_name list
+        if state == '报警发生':
+            self.alarm_names.add(alarm_name)
+        else:
+            # maybe self.alarm_names is empty
+            if alarm_name in self.alarm_names:
+                self.alarm_names.remove(alarm_name)
+            else:
+                pass
+        # change warning state
+        if self.alarm_names:
+            warning = 1
+        else:
+            warning = 0
 
-    def add_table_name(self, tank_data, table_name):
+        warning_string = ';'.join(self.alarm_names)
+
+        return warning, warning_string
+
+    def process_alarm_data(self, alarm_data):
+        """
+        parse alarm data to right format which influxdb fields need
+        """
+        alarm_id, alarm_name, datetime, state, remark = alarm_data
+        # datetime to timestamp
+        date_timestamp = int(time.mktime(datetime.timetuple())) * 1000000 # to fit infuxldb timestamp 'us'
+
+        warning, warning_string = self.handle_warning_state(alarm_name, state)
+
+        data = {
+                "warning": warning,
+                "warning_string": warning_string, 
+                "alarm_id": alarm_id,
+                "alarm_name": alarm_name,
+                "date_timestamp": date_timestamp,
+                "state": state,
+                "remark": remark,
+                }
+        return data
+
+    def process_control_data(self, data):
+        """
+        parse control data to right format which influxdb fields need
+        """
+        log.debug(data)
+        _, status =  data
+        # datetime to timestamp
+        date_timestamp = int(pendulum.now().float_timestamp * 1000000) # to fit infuxldb timestamp 'us'
+
+        data = {
+                "status": status,
+                "date_timestamp": date_timestamp,
+                }
+        return data
+
+    def add_table_name(self, data, table_name):
         """
         add table_name in fields
         """
         table_dict = {
             "table_name": table_name,
         }
-        tank_data.update(table_dict)
+        data.update(table_dict)
 
-        return tank_data
+        return data
+    
+    def select_row(self, table_name):
+        """
+        select alarm data
+        """
+        # CONTROL table have no DT we should select data by id
+        if table_name == 'CONTROL':
+            sql = 'select * from {} order by ID desc'.format(table_name)
+        else:
+            sql = 'select * from {} order by DT desc'.format(table_name)
+        self.cursor.execute(sql)
+        row = self.cursor.fetchone()
+        # print(row)
+        return row
+    
+    def handle_data_method(self, table_name):
+        """
+        handle data by table_name
+        """
+        methods = {
+            'HISTALARM': self.process_alarm_data,
+            'CONTROL': self.process_control_data,
+            'TANK1': self.process_tank_data,
+            'TANK2': self.process_tank_data,
+            'TANK3': self.process_tank_data,
+            'TANK4': self.process_tank_data,
+        }
+
+        return methods[table_name]
 
     def user_check(self):
         """
@@ -115,28 +194,29 @@ class MyCheck(Check):
         :param command: user defined parameter.
         :return: the data you requested.
         """
-        tank_data_handle = None
+        data_handle = None
 
         for table_name in self.table_names:
             try:
-                # select data from firebire database
-                tank_data = self.select_tank_row(table_name)
+                data = self.select_row(table_name)    
                 # when table have data
-                if tank_data:
-                # process select data to right fields which influxdb need
-                    tank_data_handle = self.process_tank_data(tank_data)
-                    tank_data_handle = self.add_table_name(tank_data_handle, table_name)
+                if data:
+
+                    data_handle = self.handle_data_method(table_name)(data)
+        
+                    data_handle = self.add_table_name(data_handle, table_name)
+
                 else:
                     log.info("{} have no data".format(table_name))
-                    tank_data_handle = None
+                    data_handle = None
             
             except Exception as e:
                 traceback.print_exc()
                 log.error(e)
                 self.re_connect()
 
-            if tank_data_handle:
-                yield tank_data_handle
+            if data_handle:
+                yield data_handle
 
 
 class MyHandler(Handler):

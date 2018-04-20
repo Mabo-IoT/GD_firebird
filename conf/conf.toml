@@ -11,7 +11,7 @@ paths = ['./conf/conf.toml', './lua/enque_script.lua', './plugins/your_plugin.py
     path = 'D:\Work\Projects\GD_firebird_project\EKP.FDB'
     username = 'sysdba'
     passwd = 'masterkey'
-    table_names= ['TANK1', 'TANK2', 'TANK3', 'TANK4']
+    table_names= ['CONTROL', 'HISTALARM', 'TANK1', 'TANK2', 'TANK3', 'TANK4']
 
     [user_conf.handler]
     # handler config
